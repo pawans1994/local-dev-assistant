@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local runtime data
+memory/
+traces/
+code_index.json
+
+# Mac
+.DS_Store
