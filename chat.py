@@ -1,6 +1,8 @@
 import requests
 import json
-from tools import list_files, read_file, list_entries, search_codebase
+from tools import list_files, read_file, list_entries, search_codebase, semantic_search_codebase, read_file_chunk
+from helpers.tracing import trace_event, save_trace
+from helpers.dirs import ensure_dirs
 import re
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
@@ -52,6 +54,10 @@ def try_execute_tool(response_text):
             return action, list_entries(**args)
         elif action == "search_codebase":
             return action, search_codebase(**args)
+        elif action == "semantic_search_codebase":
+            return action, semantic_search_codebase(**args)
+        elif action == "read_file_chunk":
+            return action, read_file_chunk(**args)
     except Exception as e:
         return action, f"Error executing tool: {str(e)}"
 
@@ -69,6 +75,7 @@ def chat(messages):
     return data["message"]["content"]
 
 def main():
+    ensure_dirs()
     messages = [
         {
             "role": "system",
@@ -83,7 +90,11 @@ def main():
         if user.lower() in {"exit", "quit"}:
             break
 
+        trace_event("user_input", user)
+
         rewritten_user = rewrite_codebase_query(user)
+        trace_event("rewritten_query", rewritten_user)
+
         messages.append({"role": "user", "content": rewritten_user})
 
         assistant = chat(messages)
@@ -91,10 +102,14 @@ def main():
 
         max_steps = 8
         for _ in range(max_steps):
+            trace_event("assistant_response", assistant)
+
             action, tool_result = try_execute_tool(assistant)
 
             if action is None:
                 if looks_like_invalid_protocol_response(assistant):
+                    trace_event("invalid_protocol_response", assistant)
+
                     messages.append({
                         "role": "user",
                         "content": (
@@ -105,29 +120,41 @@ def main():
                             "Do not return booleans, null, empty arrays, or empty objects."
                         )
                     })
+
                     assistant = chat(messages)
                     messages.append({"role": "assistant", "content": assistant})
                     continue
 
+                trace_event("final_answer", assistant)
                 print(f"\nAssistant: {assistant}\n")
                 break
 
-            print(f"\n[Tool: {action}]\n{tool_content(tool_result)}\n")
+            trace_event("tool_call", {"tool": action})
+            trace_event("tool_result", tool_content(tool_result))
+
             messages.append({"role": "tool", "content": tool_content(tool_result)})
 
-            if action == "search_codebase":
+            if action in {"search_codebase", "semantic_search_codebase", "read_file_chunk"}:
                 messages.append({
                     "role": "user",
                     "content": (
-                        "Using only the retrieved snippets above, answer the original question. "
-                        "Prefer actual loop/control-flow code over examples, URLs, or prompt text."
+                        "Using only the retrieved code above, answer the original question completely. "
+                        "Explain the execution flow step by step. "
+                        "Include short exact code snippets for the most important steps. "
+                        "Do not ask follow-up questions. "
+                        "Do not invent code that is not present in the retrieved results."
                     )
                 })
 
             assistant = chat(messages)
             messages.append({"role": "assistant", "content": assistant})
+
         else:
+            trace_event("step_limit_reached", {"max_steps": max_steps})
             print("\nAssistant: I hit the tool-call step limit.\n")
+
+        save_trace()
+    
 
 if __name__ == "__main__":
     main()

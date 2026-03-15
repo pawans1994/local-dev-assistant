@@ -1,4 +1,83 @@
 import os
+import json
+import numpy as np
+from sentence_transformers import SentenceTransformer
+
+INDEX_FILE = "code_index.json"
+EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
+
+_embedding_model = None
+
+def read_file_chunk(path, start_line, end_line):
+    try:
+        start_line = int(start_line)
+        end_line = int(end_line)
+
+        if start_line < 1:
+            start_line = 1
+        if end_line < start_line:
+            return {"error": "end_line must be >= start_line"}
+
+        with open(path, "r") as f:
+            lines = f.readlines()
+
+        total_lines = len(lines)
+        if start_line > total_lines:
+            return {"error": f"start_line {start_line} is beyond file length {total_lines}"}
+
+        end_line = min(end_line, total_lines)
+
+        chunk_lines = lines[start_line - 1:end_line]
+        text = "".join(chunk_lines)
+
+        return {
+            "file": path,
+            "start_line": start_line,
+            "end_line": end_line,
+            "text": text
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+def get_embedding_model():
+    global _embedding_model
+    if _embedding_model is None:
+        _embedding_model = SentenceTransformer(EMBED_MODEL_NAME)
+    return _embedding_model
+
+
+def cosine_similarity(a, b):
+    a = np.array(a)
+    b = np.array(b)
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+
+def semantic_search_codebase(query, top_k=3):
+    with open(INDEX_FILE, "r") as f:
+        index = json.load(f)
+
+    model = get_embedding_model()
+    query_embedding = model.encode(query).tolist()
+
+    scored = []
+    for item in index:
+        score = cosine_similarity(query_embedding, item["embedding"])
+        scored.append((score, item))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    results = []
+    for score, item in scored[:top_k]:
+        results.append({
+            "file": item["file"],
+            "start_line": item["start_line"],
+            "end_line": item["end_line"],
+            "score": round(score, 4),
+            "text": item["text"]
+        })
+
+    return results
 
 def list_files(path="."):
     try:

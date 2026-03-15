@@ -6,13 +6,16 @@ MODEL_NAME = "all-MiniLM-L6-v2"
 ROOT_DIR = "."
 OUTPUT_FILE = "code_index.json"
 
-INDEX_FILES = {"chat.py", "tools.py"}
+INDEX_FILES = {"chat.py"}
 
 model = SentenceTransformer(MODEL_NAME)
 
 SKIP_MARKERS = [
     "Using only the retrieved snippets above",
-    "Prefer actual loop/control-flow code over examples",
+    "Do not invent code",
+    "If the snippets are insufficient",
+    'return "try_execute_tool action tool_result max_steps"',
+    'return "while True max_steps main input"',
 ]
 
 def is_mostly_imports(text: str) -> bool:
