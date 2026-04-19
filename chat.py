@@ -51,7 +51,8 @@ def build_system_message(memory: list) -> str:
         return base
     ctx = "\n\n---\n## Recent session memory\n"
     for item in memory[-5:]:
-        ctx += f"\nQ: {item['query']}\nA: {item['answer'][:400]}\n"
+        answer = item.get("answer") or item.get("final_answer", "")
+        ctx += f"\nQ: {item['query']}\nA: {answer[:400]}\n"
     return base + ctx
 
 
